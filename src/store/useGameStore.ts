@@ -14,6 +14,8 @@ import type {
   StoryRecord,
   ReputationHistory,
   Renovation,
+  Faction,
+  FactionHistory,
 } from '@/types'
 import { STORIES } from '@/data/stories'
 import { initSnacks } from '@/data/snacks'
@@ -21,6 +23,7 @@ import { initSeats } from '@/data/seats'
 import { initRenovations, getUpgradeCost } from '@/data/renovations'
 import { INTERRUPTIONS } from '@/data/interruptions'
 import { generateRandomCustomers } from '@/data/customers'
+import { INITIAL_FACTION_SUPPORT } from '@/data/factions'
 import { calcSettlement } from '@/utils/settlement'
 
 const WEATHERS: Weather[] = ['晴', '晴', '晴', '云', '云', '雨', '雪']
@@ -67,6 +70,8 @@ const initialState: GameState = {
   storyScores: {},
   isSettlement: false,
   lastSettlement: null,
+  factionSupport: { ...INITIAL_FACTION_SUPPORT },
+  factionHistory: [],
 }
 
 interface GameActions {
@@ -82,6 +87,7 @@ interface GameActions {
   nextDay: () => void
   resetGame: () => void
   addLedgerRecord: (type: LedgerRecord['type'], category: string, amount: number, note: string) => void
+  updateFactionSupport: (faction: Faction, delta: number, reason: string) => void
 }
 
 export const useGameStore = create<GameState & GameActions>()(
@@ -331,6 +337,16 @@ export const useGameStore = create<GameState & GameActions>()(
           reputationHistory: [...s.reputationHistory, repHistory],
         }))
 
+        for (const [faction, delta] of Object.entries(result.factionDeltas)) {
+          if (delta !== 0) {
+            get().updateFactionSupport(
+              faction as Faction,
+              delta,
+              delta > 0 ? '故事合心意' : '故事不合口味'
+            )
+          }
+        }
+
         get().addLedgerRecord('收入', '基础门票', result.baseEarnings, '晚场门票')
         if (result.tasteMatchBonus > 0)
           get().addLedgerRecord('收入', '口味匹配', result.tasteMatchBonus, '故事对味')
@@ -344,8 +360,12 @@ export const useGameStore = create<GameState & GameActions>()(
           get().addLedgerRecord('收入', '客人打赏', result.tips, '客人满意打赏')
         if (result.snackRevenue > 0)
           get().addLedgerRecord('收入', '茶点售卖', result.snackRevenue, '消费茶点')
+        if (result.factionHarmonyBonus > 0)
+          get().addLedgerRecord('收入', '阵营和谐', result.factionHarmonyBonus, '友方阵营相谈甚欢')
         if (result.badReviewPenalty > 0)
           get().addLedgerRecord('支出', '差评损失', result.badReviewPenalty, '客人不满索赔')
+        if (result.factionConflictPenalty > 0)
+          get().addLedgerRecord('支出', '阵营冲突', result.factionConflictPenalty, '敌对阵营争执闹事')
       },
 
       nextDay: () => {
@@ -385,6 +405,27 @@ export const useGameStore = create<GameState & GameActions>()(
           ],
         }))
       },
+
+      updateFactionSupport: (faction, delta, reason) => {
+        set((s) => {
+          const newValue = Math.max(0, Math.min(100, s.factionSupport[faction] + delta))
+          const actualDelta = newValue - s.factionSupport[faction]
+          const historyEntry: FactionHistory = {
+            day: s.day,
+            faction,
+            value: newValue,
+            delta: actualDelta,
+            reason,
+          }
+          return {
+            factionSupport: {
+              ...s.factionSupport,
+              [faction]: newValue,
+            },
+            factionHistory: [...s.factionHistory, historyEntry],
+          }
+        })
+      },
     }),
     {
       name: 'teahouse-storyteller-save',
@@ -400,6 +441,8 @@ export const useGameStore = create<GameState & GameActions>()(
         reputationHistory: s.reputationHistory,
         lastStoryDay: s.lastStoryDay,
         storyScores: s.storyScores,
+        factionSupport: s.factionSupport,
+        factionHistory: s.factionHistory,
       }),
     }
   )

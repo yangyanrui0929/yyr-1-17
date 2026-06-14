@@ -55,6 +55,22 @@ export interface Story {
   summary: string
 }
 
+export type Faction = '书院' | '镖局' | '商会' | '衙门'
+
+export interface FactionInfo {
+  id: Faction
+  name: string
+  description: string
+  stance: string
+  taboo: string
+  likesTags: string[]
+  dislikesTags: string[]
+  alliedFactions: Faction[]
+  opposedFactions: Faction[]
+  emoji: string
+  color: string
+}
+
 export type CustomerType = '书生' | '商贾' | '妇人' | '江湖人' | '官员' | '平民'
 
 export interface CustomerTemplate {
@@ -66,6 +82,7 @@ export interface CustomerTemplate {
   baseWealth: number
   socialInfluence: number
   emoji: string
+  faction: Faction | null
 }
 
 export interface Customer {
@@ -80,6 +97,7 @@ export interface Customer {
   seatId: number | null
   satisfaction: number
   emoji: string
+  faction: Faction | null
 }
 
 export interface InterruptionOption {
@@ -124,6 +142,21 @@ export interface ReputationHistory {
   reason: string
 }
 
+export interface FactionSupport {
+  faction: Faction
+  support: number
+  delta: number
+  reason: string
+}
+
+export interface FactionHistory {
+  day: number
+  faction: Faction
+  value: number
+  delta: number
+  reason: string
+}
+
 export interface GameState {
   day: number
   phase: Phase
@@ -148,6 +181,8 @@ export interface GameState {
   storyScores: Record<string, number[]>
   isSettlement: boolean
   lastSettlement: SettlementResult | null
+  factionSupport: Record<Faction, number>
+  factionHistory: FactionHistory[]
 }
 
 export interface SettlementResult {
@@ -161,9 +196,12 @@ export interface SettlementResult {
   badReviewPenalty: number
   tips: number
   snackRevenue: number
+  factionHarmonyBonus: number
+  factionConflictPenalty: number
   totalEarnings: number
   reputationDelta: number
   avgSatisfaction: number
+  factionDeltas: Record<Faction, number>
 }
 
 export interface CalcResult {

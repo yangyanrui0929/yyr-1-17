@@ -10,6 +10,7 @@ export const CUSTOMER_TEMPLATES: CustomerTemplate[] = [
     baseWealth: 30,
     socialInfluence: 3,
     emoji: '📚',
+    faction: '书院',
   },
   {
     type: '商贾',
@@ -20,6 +21,7 @@ export const CUSTOMER_TEMPLATES: CustomerTemplate[] = [
     baseWealth: 100,
     socialInfluence: 4,
     emoji: '💰',
+    faction: '商会',
   },
   {
     type: '妇人',
@@ -30,6 +32,7 @@ export const CUSTOMER_TEMPLATES: CustomerTemplate[] = [
     baseWealth: 50,
     socialInfluence: 3,
     emoji: '👩',
+    faction: null,
   },
   {
     type: '江湖人',
@@ -40,6 +43,7 @@ export const CUSTOMER_TEMPLATES: CustomerTemplate[] = [
     baseWealth: 20,
     socialInfluence: 5,
     emoji: '⚔️',
+    faction: '镖局',
   },
   {
     type: '官员',
@@ -50,6 +54,7 @@ export const CUSTOMER_TEMPLATES: CustomerTemplate[] = [
     baseWealth: 150,
     socialInfluence: 5,
     emoji: '🎩',
+    faction: '衙门',
   },
   {
     type: '平民',
@@ -60,6 +65,7 @@ export const CUSTOMER_TEMPLATES: CustomerTemplate[] = [
     baseWealth: 15,
     socialInfluence: 2,
     emoji: '👤',
+    faction: null,
   },
 ]
 
@@ -79,6 +85,7 @@ export function generateRandomCustomers(count: number): Customer[] {
       seatId: null,
       satisfaction: 50,
       emoji: tpl.emoji,
+      faction: tpl.faction,
     })
   }
   return result

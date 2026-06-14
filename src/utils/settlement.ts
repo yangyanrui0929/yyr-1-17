@@ -7,12 +7,14 @@ import type {
   StoryRecord,
   SettlementResult,
   Snack,
+  Faction,
 } from '@/types'
 import { calcAvgTasteMatch } from './tasteMatch'
 import { calcAvgSeatView } from './seatView'
 import { calcStoryHeat } from './storyHeat'
 import { calcSerialExpect } from './serialExpect'
 import { calcBadReview, calcBadReviewGold } from './badReview'
+import { calcFactionSatisfactionImpact, calcStoryFactionImpact } from './factionRelations'
 import { SEAT_PRICE_MULTIPLIER } from '@/data/seats'
 
 export function calcSettlement(
@@ -28,14 +30,19 @@ export function calcSettlement(
   reputation: number,
   snacks: Snack[]
 ): SettlementResult {
-  const audience = customers.filter((c) => c.seatId !== null)
+  const factionImpact = calcFactionSatisfactionImpact(customers, seats)
+  const adjustedCustomers = factionImpact.customers
+  const factionHarmonyBonus = factionImpact.harmonyBonus
+  const factionConflictPenalty = factionImpact.conflictPenalty
+
+  const audience = adjustedCustomers.filter((c) => c.seatId !== null)
   const audienceCount = audience.length
 
   const taste = calcAvgTasteMatch(audience, branch)
   const view = calcAvgSeatView(seats, renovations)
   const heat = calcStoryHeat(story, branch, history, reputation)
   const expect = calcSerialExpect(story.id, day, lastStoryDay, storyScores)
-  const badReview = calcBadReview(customers, reputation)
+  const badReview = calcBadReview(adjustedCustomers, reputation)
 
   let baseEarnings = 0
   for (const c of audience) {
@@ -56,7 +63,7 @@ export function calcSettlement(
     tips += Math.round(c.wealth * satFactor * genFactor * 0.15)
   }
 
-  const badReviewPenalty = calcBadReviewGold(customers)
+  const badReviewPenalty = calcBadReviewGold(adjustedCustomers)
 
   let snackRevenue = 0
   const consumedSnacks: Record<string, number> = {}
@@ -82,8 +89,10 @@ export function calcSettlement(
     storyHeatBonus +
     serialExpectBonus +
     tips +
-    snackRevenue -
-    badReviewPenalty
+    snackRevenue +
+    factionHarmonyBonus -
+    badReviewPenalty -
+    factionConflictPenalty
 
   const avgSatisfaction =
     audience.length > 0
@@ -93,7 +102,27 @@ export function calcSettlement(
   const satisfactionDelta = Math.round((avgSatisfaction - 50) * 0.15)
   const heatDelta = Math.round((heat.value - 50) * 0.1)
   const badReviewDelta = -badReview.value
-  const reputationDelta = satisfactionDelta + heatDelta + badReviewDelta
+  const factionDelta = Math.round((factionHarmonyBonus - factionConflictPenalty) * 0.1)
+  const reputationDelta = satisfactionDelta + heatDelta + badReviewDelta + factionDelta
+
+  const factionDeltas = calcStoryFactionImpact(branch)
+  const factionCustomerCount: Record<Faction, number> = {
+    书院: 0,
+    镖局: 0,
+    商会: 0,
+    衙门: 0,
+  }
+  for (const c of audience) {
+    if (c.faction) {
+      factionCustomerCount[c.faction]++
+    }
+  }
+  for (const faction of Object.keys(factionDeltas) as Faction[]) {
+    const count = factionCustomerCount[faction]
+    if (count > 0) {
+      factionDeltas[faction] = Math.round(factionDeltas[faction] * (1 + count * 0.2))
+    }
+  }
 
   return {
     day,
@@ -106,8 +135,11 @@ export function calcSettlement(
     badReviewPenalty,
     tips,
     snackRevenue,
+    factionHarmonyBonus,
+    factionConflictPenalty,
     totalEarnings,
     reputationDelta,
     avgSatisfaction,
+    factionDeltas,
   }
 }

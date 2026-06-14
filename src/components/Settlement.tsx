@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Coins, Trophy, ArrowUp, ArrowDown, Sparkles } from 'lucide-react'
+import { Coins, Trophy, ArrowUp, ArrowDown, Sparkles, Heart, Swords, Users } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
+import { FACTIONS } from '@/data/factions'
+import type { Faction } from '@/types'
 
 interface RowProps {
   label: string
@@ -93,7 +95,9 @@ export default function Settlement() {
           <Row label="连载期待加成" value={r.serialExpectBonus} positive />
           <Row label="打赏收入" value={r.tips} positive />
           <Row label="茶点售卖利润" value={r.snackRevenue} positive />
+          {r.factionHarmonyBonus > 0 && <Row label="阵营和谐加兴" value={r.factionHarmonyBonus} positive />}
           {r.badReviewPenalty > 0 && <Row label="差评索赔" value={r.badReviewPenalty} />}
+          {r.factionConflictPenalty > 0 && <Row label="阵营冲突损失" value={r.factionConflictPenalty} />}
         </div>
 
         <Row label="今夜合计收入" value={r.totalEarnings} positive showIcon highlight />
@@ -108,6 +112,30 @@ export default function Settlement() {
           <Coins className="w-6 h-6 text-gold" />
           <span className="font-song text-ink-light">合计入账</span>
           <span className="font-brush text-2xl text-gold">+{r.totalEarnings} 文</span>
+        </div>
+
+        <div className="mt-4 p-4 bg-paper-dark/50 rounded-xl border-2 border-sandal/30">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="w-5 h-5 text-sandal" />
+            <span className="font-brush text-lg text-sandal">阵营支持度变化</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {FACTIONS.map((f) => {
+              const delta = r.factionDeltas[f.id]
+              const deltaColor = delta >= 0 ? 'text-tea' : 'text-cinnabar'
+              return (
+                <div key={f.id} className="flex items-center justify-between p-2 bg-paper/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{f.emoji}</span>
+                    <span className="font-song text-sm" style={{ color: f.color }}>{f.name}</span>
+                  </div>
+                  <span className={`font-semibold ${deltaColor}`}>
+                    {delta >= 0 ? '+' : ''}{delta}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
 
         <div className="mt-6 flex justify-center">

@@ -1,9 +1,11 @@
-import { useState, useCallback } from 'react'
-import { Armchair, Move, X, Eye, MapPin } from 'lucide-react'
+import { useState, useCallback, useMemo } from 'react'
+import { Armchair, Move, X, Eye, MapPin, Users, Swords, Heart } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { GRID_COLS, GRID_ROWS, STAGE_POS, SEAT_PRICE_MULTIPLIER } from '@/data/seats'
 import { calcSeatView } from '@/utils/seatView'
-import type { Seat, CalcResult } from '@/types'
+import { calcFactionHarmony, getFactionSeatDistance } from '@/utils/factionRelations'
+import { FACTIONS, FACTION_MAP, getFactionRelation } from '@/data/factions'
+import type { Seat, CalcResult, Faction } from '@/types'
 
 const TIER_COLORS: Record<string, string> = {
   普通: 'bg-sandal-light/50 border-sandal',
@@ -23,6 +25,7 @@ export default function SeatGrid() {
   const [selectedSeat, setSelectedSeat] = useState<Seat | null>(null)
 
   const viewCache = new Map(seats.map((s) => [s.id, calcSeatView(s, renovations)]))
+  const factionHarmony = useMemo(() => calcFactionHarmony(customers, seats), [customers, seats])
 
   const handleCellDrop = useCallback(
     (x: number, y: number) => {
@@ -55,13 +58,15 @@ export default function SeatGrid() {
     ? customers.find((c) => c.seatId === selectedSeat.id)
     : null
 
+  const harmonyColor = factionHarmony.value > 70 ? '#6B8E5A' : factionHarmony.value > 40 ? '#C9A24B' : '#A83232'
+
   return (
     <div className="scroll-panel">
       <h2 className="text-2xl font-brush text-sandal mb-2 flex items-center gap-2">
         <Armchair className="w-6 h-6" /> 座位排布
       </h2>
       <p className="text-sm text-ink-light mb-4">
-        拖拽座位调整位置，距离说书台越近视野越好。点击座位查看视野评分详情
+        拖拽座位调整位置，距离说书台越近视野越好。注意阵营关系，友方阵营相邻加兴，敌方阵营相邻争吵。
       </p>
 
       <div className="flex flex-wrap gap-4 mb-4">
@@ -69,6 +74,37 @@ export default function SeatGrid() {
           <div key={t} className="flex items-center gap-2 text-sm">
             <div className={`w-4 h-4 rounded ${TIER_COLORS[t]} border-2`} />
             <span className="font-song">{t}座 · 票价倍率 x{SEAT_PRICE_MULTIPLIER[t]}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-4 mb-4 p-3 bg-paper-dark/50 rounded-lg">
+        <div className="flex items-center gap-2">
+          <Users className="w-5 h-5 text-sandal" />
+          <span className="font-brush text-lg text-sandal">阵营和谐度：</span>
+          <span className="font-bold text-xl" style={{ color: harmonyColor }}>
+            {factionHarmony.value}
+          </span>
+        </div>
+        {factionHarmony.details['友好阵营相邻'] !== undefined && (
+          <div className="flex items-center gap-1 text-sm text-tea">
+            <Heart className="w-4 h-4" />
+            友好相邻：{factionHarmony.details['友好阵营相邻']}对
+          </div>
+        )}
+        {factionHarmony.details['敌对阵营相邻'] !== undefined && (
+          <div className="flex items-center gap-1 text-sm text-cinnabar">
+            <Swords className="w-4 h-4" />
+            敌对相邻：{factionHarmony.details['敌对阵营相邻']}对
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-3 mb-4">
+        {FACTIONS.map((f) => (
+          <div key={f.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border" style={{ borderColor: f.color, color: f.color }}>
+            <span>{f.emoji}</span>
+            <span className="font-song">{f.name}</span>
           </div>
         ))}
       </div>
@@ -99,6 +135,8 @@ export default function SeatGrid() {
                 if (seat) {
                   const view = viewCache.get(seat.id)?.value || 0
                   const isSelected = selectedSeat?.id === seat.id
+                  const customer = seat.occupied ? customers.find((c) => c.seatId === seat.id) : null
+                  const factionInfo = customer?.faction ? FACTION_MAP[customer.faction] : null
                   return (
                     <div
                       key={`${x}-${y}`}
@@ -113,7 +151,16 @@ export default function SeatGrid() {
                       } ${isSelected ? 'ring-2 ring-cinnabar ring-offset-2' : ''}`}
                     >
                       <Move className="w-3 h-3 text-ink-light absolute top-0.5 right-0.5 opacity-50" />
-                      <span className="text-xl">{seat.occupied ? '👤' : '🪑'}</span>
+                      {factionInfo && (
+                        <div
+                          className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[8px]"
+                          style={{ backgroundColor: factionInfo.color + '30', color: factionInfo.color }}
+                          title={factionInfo.name}
+                        >
+                          {factionInfo.emoji}
+                        </div>
+                      )}
+                      <span className="text-xl">{seat.occupied ? (customer?.emoji || '👤') : '🪑'}</span>
                       <span className="text-[10px] font-song text-ink-light">{seat.tier}</span>
                       <div
                         className="text-[10px] font-semibold"
@@ -189,9 +236,26 @@ export default function SeatGrid() {
                     <div className="text-xs text-ink-light">{seatedCustomer.type}</div>
                   </div>
                 </div>
-                <div className="text-xs text-ink-light mt-1">
+                {seatedCustomer.faction && (
+                  <div
+                    className="text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1"
+                    style={{
+                      backgroundColor: FACTION_MAP[seatedCustomer.faction].color + '20',
+                      color: FACTION_MAP[seatedCustomer.faction].color,
+                    }}
+                  >
+                    <span>{FACTION_MAP[seatedCustomer.faction].emoji}</span>
+                    <span>{FACTION_MAP[seatedCustomer.faction].name}</span>
+                  </div>
+                )}
+                <div className="text-xs text-ink-light mt-2">
                   喜好：{seatedCustomer.preferenceTags.slice(0, 3).join('、')}
                 </div>
+                {seatedCustomer.faction && (
+                  <div className="text-xs text-ink-light mt-1">
+                    立场：{FACTION_MAP[seatedCustomer.faction].stance}
+                  </div>
+                )}
               </div>
             )}
 
