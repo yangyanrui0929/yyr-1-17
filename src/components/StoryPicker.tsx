@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Scroll, Flame, Heart, Users, UserCheck, Sparkles } from 'lucide-react'
+import { Scroll, Flame, Heart, Users, UserCheck, Sparkles, TrendingUp, TrendingDown } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
-import type { Story, StoryBranch } from '@/types'
+import type { Story, StoryBranch, Faction } from '@/types'
 import { calcStoryHeat } from '@/utils/storyHeat'
 import { calcSerialExpect } from '@/utils/serialExpect'
 import { calcAvgTasteMatch } from '@/utils/tasteMatch'
+import { calcStoryFactionImpact } from '@/utils/factionRelations'
+import { FACTIONS, FACTION_MAP } from '@/data/factions'
 
 export default function StoryPicker() {
   const {
@@ -19,6 +21,7 @@ export default function StoryPicker() {
     storyScores,
     startPerformance,
     customers,
+    factionSupport,
   } = useGameStore()
 
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null)
@@ -112,9 +115,10 @@ export default function StoryPicker() {
                     {isSelected && (
                       <div className="border-t border-sandal/20 pt-2 animate-unroll">
                         <div className="text-xs text-ink-light mb-2">选择分支：</div>
-                        <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-col gap-2">
                           {story.branches.map((b: StoryBranch) => {
                             const tm = tasteMatchForBranch(b)
+                            const factionImpact = calcStoryFactionImpact(b)
                             return (
                               <button
                                 key={b.id}
@@ -124,18 +128,36 @@ export default function StoryPicker() {
                                 }}
                                 className="w-full text-left px-3 py-2 rounded-lg bg-paper-dark/50 hover:bg-gold/30 text-sm transition-all border border-sandal/20 hover:border-gold"
                               >
-                                <div className="font-medium flex justify-between items-center">
+                                <div className="font-medium flex justify-between items-center mb-1">
                                   <span>{b.title}</span>
                                   <span className="text-xs text-teal font-semibold">
                                     匹配 {tm.value}
                                   </span>
                                 </div>
-                                <div className="flex flex-wrap gap-1 mt-1">
+                                <div className="flex flex-wrap gap-1 mb-2">
                                   {b.tags.map((t) => (
                                     <span key={t} className="text-[10px] text-tea">
                                       #{t}
                                     </span>
                                   ))}
+                                </div>
+                                <div className="grid grid-cols-4 gap-1">
+                                  {FACTIONS.map((f) => {
+                                    const delta = factionImpact[f.id]
+                                    const deltaColor = delta >= 0 ? 'text-tea' : 'text-cinnabar'
+                                    return (
+                                      <div
+                                        key={f.id}
+                                        className="flex items-center justify-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-paper/50"
+                                        title={`${f.name}支持度变化`}
+                                      >
+                                        <span>{f.emoji}</span>
+                                        <span className={`font-semibold ${deltaColor}`}>
+                                          {delta >= 0 ? '+' : ''}{delta}
+                                        </span>
+                                      </div>
+                                    )
+                                  })}
                                 </div>
                               </button>
                             )
@@ -154,7 +176,30 @@ export default function StoryPicker() {
               <Users className="w-5 h-5" /> 今日宾客 ({seated.length}人)
             </h3>
 
-            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+            <div className="mb-4 p-3 bg-paper-dark/30 rounded-lg border border-sandal/20">
+              <div className="text-xs text-ink-light mb-2 flex items-center gap-1">
+                <TrendingUp className="w-3 h-3" /> 阵营支持度（选择分支后将变化）
+              </div>
+              <div className="space-y-2">
+                {FACTIONS.map((f) => (
+                  <div key={f.id} className="flex items-center gap-2">
+                    <span className="text-sm">{f.emoji}</span>
+                    <span className="text-xs font-song w-10" style={{ color: f.color }}>{f.name}</span>
+                    <div className="flex-1 h-2 bg-paper-dark rounded-full overflow-hidden">
+                      <div
+                        className="h-full transition-all"
+                        style={{ width: `${factionSupport[f.id]}%`, backgroundColor: f.color }}
+                      />
+                    </div>
+                    <span className="text-xs font-semibold w-6 text-right" style={{ color: f.color }}>
+                      {factionSupport[f.id]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
               {seated.map((c) => (
                 <div
                   key={c.id}
@@ -166,7 +211,20 @@ export default function StoryPicker() {
                       <div className="font-song font-medium text-sm truncate">
                         {c.name}
                       </div>
-                      <div className="text-[10px] text-ink-light">{c.type}</div>
+                      <div className="text-[10px] text-ink-light flex items-center gap-1">
+                        {c.type}
+                        {c.faction && (
+                          <span
+                            className="px-1 rounded text-[9px]"
+                            style={{
+                              backgroundColor: FACTION_MAP[c.faction].color + '20',
+                              color: FACTION_MAP[c.faction].color,
+                            }}
+                          >
+                            {FACTION_MAP[c.faction].emoji} {FACTION_MAP[c.faction].name}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="text-right">
                       <div className="text-xs text-gold font-semibold">

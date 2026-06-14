@@ -1,11 +1,11 @@
 import { useState, useCallback, useMemo } from 'react'
-import { Armchair, Move, X, Eye, MapPin, Users, Swords, Heart } from 'lucide-react'
+import { Armchair, Move, X, Eye, MapPin, Users, Swords, Heart, RefreshCw, UserCheck } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { GRID_COLS, GRID_ROWS, STAGE_POS, SEAT_PRICE_MULTIPLIER } from '@/data/seats'
 import { calcSeatView } from '@/utils/seatView'
 import { calcFactionHarmony, getFactionSeatDistance } from '@/utils/factionRelations'
 import { FACTIONS, FACTION_MAP, getFactionRelation } from '@/data/factions'
-import type { Seat, CalcResult, Faction } from '@/types'
+import type { Seat, CalcResult, Faction, Customer } from '@/types'
 
 const TIER_COLORS: Record<string, string> = {
   普通: 'bg-sandal-light/50 border-sandal',
@@ -20,9 +20,10 @@ const TIER_TEXT_COLOR: Record<string, string> = {
 }
 
 export default function SeatGrid() {
-  const { seats, renovations, moveSeat, customers } = useGameStore()
+  const { seats, renovations, moveSeat, customers, swapCustomerSeats } = useGameStore()
   const [dragging, setDragging] = useState<number | null>(null)
   const [selectedSeat, setSelectedSeat] = useState<Seat | null>(null)
+  const [selectedCustomerForSwap, setSelectedCustomerForSwap] = useState<Customer | null>(null)
 
   const viewCache = new Map(seats.map((s) => [s.id, calcSeatView(s, renovations)]))
   const factionHarmony = useMemo(() => calcFactionHarmony(customers, seats), [customers, seats])
@@ -47,7 +48,27 @@ export default function SeatGrid() {
 
   const handleSeatClick = (seat: Seat) => {
     if (dragging !== null) return
+
+    if (selectedCustomerForSwap && seat.occupied) {
+      const targetCustomer = customers.find((c) => c.seatId === seat.id)
+      if (targetCustomer && targetCustomer.id !== selectedCustomerForSwap.id) {
+        swapCustomerSeats(selectedCustomerForSwap.id, targetCustomer.id)
+        setSelectedCustomerForSwap(null)
+        setSelectedSeat(seat)
+        return
+      }
+    }
+
     setSelectedSeat(seat)
+    setSelectedCustomerForSwap(null)
+  }
+
+  const handleSelectForSwap = (customer: Customer) => {
+    if (selectedCustomerForSwap?.id === customer.id) {
+      setSelectedCustomerForSwap(null)
+    } else {
+      setSelectedCustomerForSwap(customer)
+    }
   }
 
   const selectedView: CalcResult | null = selectedSeat
@@ -66,8 +87,27 @@ export default function SeatGrid() {
         <Armchair className="w-6 h-6" /> 座位排布
       </h2>
       <p className="text-sm text-ink-light mb-4">
-        拖拽座位调整位置，距离说书台越近视野越好。注意阵营关系，友方阵营相邻加兴，敌方阵营相邻争吵。
+        拖拽座位调整位置，或点击座位查看详情后选择「换座」再点击另一位客人交换座位。注意阵营关系，友方阵营相邻加兴，敌方阵营相邻争吵。
       </p>
+
+      {selectedCustomerForSwap && (
+        <div className="mb-4 p-3 bg-teal/10 border-2 border-teal/50 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <RefreshCw className="w-5 h-5 text-teal animate-spin" />
+            <span className="font-song text-teal">
+              已选中 <span className="font-bold">{selectedCustomerForSwap.name}</span>
+              {selectedCustomerForSwap.faction && `（${FACTION_MAP[selectedCustomerForSwap.faction].name}）`}
+              ，点击另一位客人交换座位
+            </span>
+          </div>
+          <button
+            onClick={() => setSelectedCustomerForSwap(null)}
+            className="btn-wood text-xs py-1 px-3"
+          >
+            取消
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-4 mb-4">
         {(['贵宾', '雅座', '普通'] as const).map((t) => (
@@ -137,20 +177,24 @@ export default function SeatGrid() {
                   const isSelected = selectedSeat?.id === seat.id
                   const customer = seat.occupied ? customers.find((c) => c.seatId === seat.id) : null
                   const factionInfo = customer?.faction ? FACTION_MAP[customer.faction] : null
+                  const isSwapSource = selectedCustomerForSwap?.id === customer?.id
+                  const isSwapTarget = selectedCustomerForSwap && seat.occupied && customer?.id !== selectedCustomerForSwap.id
                   return (
                     <div
                       key={`${x}-${y}`}
-                      draggable
+                      draggable={!selectedCustomerForSwap}
                       onDragStart={() => setDragging(seat.id)}
                       onDragEnd={() => setDragging(null)}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={() => handleCellDrop(x, y)}
                       onClick={() => handleSeatClick(seat)}
-                      className={`aspect-square flex flex-col items-center justify-center rounded-lg border-2 cursor-move transition-all relative ${TIER_COLORS[seat.tier]} ${
+                      className={`aspect-square flex flex-col items-center justify-center rounded-lg border-2 cursor-pointer transition-all relative ${TIER_COLORS[seat.tier]} ${
                         dragging === seat.id ? 'opacity-50 scale-95' : 'hover:scale-105 hover:shadow-md'
-                      } ${isSelected ? 'ring-2 ring-cinnabar ring-offset-2' : ''}`}
+                      } ${isSelected ? 'ring-2 ring-cinnabar ring-offset-2' : ''} ${
+                        isSwapSource ? 'ring-4 ring-teal ring-offset-2 animate-pulse' : ''
+                      } ${isSwapTarget ? 'ring-2 ring-teal/50 ring-offset-1' : ''}`}
                     >
-                      <Move className="w-3 h-3 text-ink-light absolute top-0.5 right-0.5 opacity-50" />
+                      <Move className={`w-3 h-3 text-ink-light absolute top-0.5 right-0.5 ${selectedCustomerForSwap ? 'opacity-20' : 'opacity-50'}`} />
                       {factionInfo && (
                         <div
                           className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[8px]"
@@ -229,12 +273,28 @@ export default function SeatGrid() {
 
             {seatedCustomer && (
               <div className="p-2 bg-paper-dark/50 rounded-lg mb-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-2xl">{seatedCustomer.emoji}</span>
-                  <div>
-                    <div className="font-medium">{seatedCustomer.name}</div>
-                    <div className="text-xs text-ink-light">{seatedCustomer.type}</div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{seatedCustomer.emoji}</span>
+                    <div>
+                      <div className="font-medium">{seatedCustomer.name}</div>
+                      <div className="text-xs text-ink-light">{seatedCustomer.type}</div>
+                    </div>
                   </div>
+                  <button
+                    onClick={() => handleSelectForSwap(seatedCustomer)}
+                    className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1 transition-all ${
+                      selectedCustomerForSwap?.id === seatedCustomer.id
+                        ? 'bg-teal text-white'
+                        : 'bg-teal/20 text-teal hover:bg-teal/30'
+                    }`}
+                  >
+                    {selectedCustomerForSwap?.id === seatedCustomer.id ? (
+                      <><UserCheck className="w-3 h-3" /> 已选中</>
+                    ) : (
+                      <><RefreshCw className="w-3 h-3" /> 换座</>
+                    )}
+                  </button>
                 </div>
                 {seatedCustomer.faction && (
                   <div

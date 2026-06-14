@@ -46,37 +46,61 @@ function uid(): string {
   return `r-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-const initialState: GameState = {
-  day: 1,
-  phase: 'day',
-  gold: 200,
-  reputation: 30,
-  weather: '晴',
-  snacks: initSnacks(),
-  seats: initSeats(),
-  renovations: initRenovations(),
-  customers: [],
-  currentStory: null,
-  currentBranch: null,
-  storyProgress: 0,
-  availableStories: [],
-  interruptions: INTERRUPTIONS,
-  currentInterruption: null,
-  performanceActive: false,
-  ledger: [],
-  storyHistory: [],
-  reputationHistory: [],
-  lastStoryDay: {},
-  storyScores: {},
-  isSettlement: false,
-  lastSettlement: null,
-  factionSupport: { ...INITIAL_FACTION_SUPPORT },
-  factionHistory: [],
+function createInitialState(): GameState {
+  const weather = randomWeather()
+  let customerCount = 6
+  if (weather === '雨') customerCount = Math.max(2, customerCount - 3)
+  if (weather === '雪') customerCount = Math.max(2, customerCount - 4)
+  if (weather === '云') customerCount = Math.max(3, customerCount - 1)
+
+  const customers = generateRandomCustomers(customerCount)
+  const seats = initSeats().map((s) => ({ ...s, occupied: false }))
+  const sortedSeats = [...seats].sort((a, b) => {
+    const order: Record<Seat['tier'], number> = { 贵宾: 0, 雅座: 1, 普通: 2 }
+    return order[a.tier] - order[b.tier]
+  })
+  for (let i = 0; i < Math.min(customers.length, sortedSeats.length); i++) {
+    const seat = sortedSeats[i]
+    customers[i].seatId = seat.id
+    const idx = seats.findIndex((s) => s.id === seat.id)
+    if (idx >= 0) seats[idx].occupied = true
+  }
+
+  return {
+    day: 1,
+    phase: 'day',
+    gold: 200,
+    reputation: 30,
+    weather,
+    snacks: initSnacks(),
+    seats,
+    renovations: initRenovations(),
+    customers,
+    currentStory: null,
+    currentBranch: null,
+    storyProgress: 0,
+    availableStories: [],
+    interruptions: INTERRUPTIONS,
+    currentInterruption: null,
+    performanceActive: false,
+    ledger: [],
+    storyHistory: [],
+    reputationHistory: [],
+    lastStoryDay: {},
+    storyScores: {},
+    isSettlement: false,
+    lastSettlement: null,
+    factionSupport: { ...INITIAL_FACTION_SUPPORT },
+    factionHistory: [],
+  }
 }
+
+const initialState: GameState = createInitialState()
 
 interface GameActions {
   buySnack: (snackId: string, qty: number) => void
   moveSeat: (seatId: number, x: number, y: number) => void
+  swapCustomerSeats: (customerId1: string, customerId2: string) => void
   upgradeRenovation: (renoId: string) => void
   switchToNight: () => void
   selectStory: (storyId: string, branchId: string) => void
@@ -123,6 +147,35 @@ export const useGameStore = create<GameState & GameActions>()(
         }))
       },
 
+      swapCustomerSeats: (customerId1: string, customerId2: string) => {
+        set((s) => {
+          const c1 = s.customers.find((c) => c.id === customerId1)
+          const c2 = s.customers.find((c) => c.id === customerId2)
+          if (!c1 || !c2) return {}
+
+          const seatId1 = c1.seatId
+          const seatId2 = c2.seatId
+
+          const newCustomers = s.customers.map((c) => {
+            if (c.id === customerId1) return { ...c, seatId: seatId2 }
+            if (c.id === customerId2) return { ...c, seatId: seatId1 }
+            return c
+          })
+
+          const newSeats = s.seats.map((seat) => {
+            if (seat.id === seatId1) {
+              return { ...seat, occupied: seatId2 !== null }
+            }
+            if (seat.id === seatId2) {
+              return { ...seat, occupied: seatId1 !== null }
+            }
+            return seat
+          })
+
+          return { customers: newCustomers, seats: newSeats }
+        })
+      },
+
       upgradeRenovation: (renoId: string) => {
         const state = get()
         const reno = state.renovations.find((r) => r.id === renoId)
@@ -153,25 +206,13 @@ export const useGameStore = create<GameState & GameActions>()(
 
       switchToNight: () => {
         const state = get()
-        const weather = state.weather
-        let customerCount = 6
-        if (weather === '雨') customerCount = Math.max(2, customerCount - 3)
-        if (weather === '雪') customerCount = Math.max(2, customerCount - 4)
-        if (weather === '云') customerCount = Math.max(3, customerCount - 1)
-        if (state.reputation > 50) customerCount += 2
-        if (state.reputation > 80) customerCount += 2
-
-        const customers = generateRandomCustomers(customerCount)
-        const seats = [...state.seats].map((s) => ({ ...s, occupied: false }))
-        const sortedSeats = [...seats].sort((a, b) => {
-          const order: Record<Seat['tier'], number> = { 贵宾: 0, 雅座: 1, 普通: 2 }
-          return order[a.tier] - order[b.tier]
-        })
-        for (let i = 0; i < Math.min(customers.length, sortedSeats.length); i++) {
-          const seat = sortedSeats[i]
-          customers[i].seatId = seat.id
-          const idx = seats.findIndex((s) => s.id === seat.id)
-          if (idx >= 0) seats[idx].occupied = true
+        const customers = [...state.customers].map((c) => ({ ...c, satisfaction: 50 }))
+        const seats = [...state.seats]
+        for (const c of customers) {
+          if (c.seatId !== null) {
+            const idx = seats.findIndex((s) => s.id === c.seatId)
+            if (idx >= 0) seats[idx] = { ...seats[idx], occupied: true }
+          }
         }
 
         const availableStories = pickRandomStories(3)
@@ -369,11 +410,34 @@ export const useGameStore = create<GameState & GameActions>()(
       },
 
       nextDay: () => {
+        const state = get()
+        const weather = randomWeather()
+        let customerCount = 6
+        if (weather === '雨') customerCount = Math.max(2, customerCount - 3)
+        if (weather === '雪') customerCount = Math.max(2, customerCount - 4)
+        if (weather === '云') customerCount = Math.max(3, customerCount - 1)
+        if (state.reputation > 50) customerCount += 2
+        if (state.reputation > 80) customerCount += 2
+
+        const customers = generateRandomCustomers(customerCount)
+        const seats = [...state.seats].map((s) => ({ ...s, occupied: false }))
+        const sortedSeats = [...seats].sort((a, b) => {
+          const order: Record<Seat['tier'], number> = { 贵宾: 0, 雅座: 1, 普通: 2 }
+          return order[a.tier] - order[b.tier]
+        })
+        for (let i = 0; i < Math.min(customers.length, sortedSeats.length); i++) {
+          const seat = sortedSeats[i]
+          customers[i].seatId = seat.id
+          const idx = seats.findIndex((s) => s.id === seat.id)
+          if (idx >= 0) seats[idx].occupied = true
+        }
+
         set((s) => ({
           day: s.day + 1,
           phase: 'day',
-          weather: randomWeather(),
-          customers: [],
+          weather,
+          customers,
+          seats,
           currentStory: null,
           currentBranch: null,
           storyProgress: 0,
@@ -381,12 +445,11 @@ export const useGameStore = create<GameState & GameActions>()(
           performanceActive: false,
           currentInterruption: null,
           isSettlement: false,
-          seats: s.seats.map((seat) => ({ ...seat, occupied: false })),
         }))
       },
 
       resetGame: () => {
-        set({ ...initialState, weather: randomWeather() })
+        set(createInitialState())
       },
 
       addLedgerRecord: (type, category, amount, note) => {
